@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>O Pão de Mel · Doces Cintia Morena</title>
 <link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
+</script>
 <style>
 :root{--brown:#4a2512;--deep:#2e1409;--choc:#1d0c05;--gold:#f6b81a;--honey:#e89a0c;--cream:#fff3d6;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *,*::before,*::after{box-sizing:inherit}
@@ -187,6 +190,18 @@ footer .honey-atmo::before{animation-delay:-9s}
 .music-toggle:hover{transform:translateY(-2px);background:var(--brown)}
 .music-toggle[aria-pressed="true"]{border-color:var(--gold);box-shadow:0 0 0 3px rgba(246,184,26,.18),0 4px 14px rgba(0,0,0,.35)}
 .music-toggle:focus-visible{outline:3px solid var(--cream);outline-offset:3px}
+.try-section{overflow:hidden;background:linear-gradient(155deg,#35190c,var(--deep) 65%,#452111)}
+.try-section>.honey-atmo{--ambient-opacity:.42;--ambient-glow:radial-gradient(ellipse at 76% 44%,rgba(246,184,26,.18),transparent 46%),radial-gradient(ellipse at 18% 82%,rgba(193,104,24,.13),transparent 42%)}
+.try-layout{display:grid;grid-template-columns:.72fr 1.28fr;align-items:center;gap:42px}
+.try-copy .pill{margin-bottom:18px}
+.try-copy p{max-width:38ch}
+.model-card{position:relative;min-width:0;overflow:hidden;border:1px solid rgba(246,184,26,.42);border-radius:32px;background:radial-gradient(ellipse at 50% 42%,rgba(218,215,208,.16),rgba(29,12,5,.84) 75%);box-shadow:0 24px 54px rgba(0,0,0,.32),inset 0 0 42px rgba(255,255,255,.06)}
+#pao-viewer{display:block;width:100%;height:clamp(300px,42vw,480px);touch-action:none;cursor:grab}
+#pao-viewer:active{cursor:grabbing}
+.model-status{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--cream);font-weight:800;text-shadow:0 2px 6px #1d0c05;pointer-events:none}
+.model-status[hidden]{display:none}
+.model-reset{margin-top:20px}
+@media (max-width:820px){.try-layout{grid-template-columns:1fr;gap:28px}.try-copy p{max-width:52ch}#pao-viewer{height:clamp(300px,90vw,420px)}}
 </style>
 </head>
 <body>
@@ -282,6 +297,19 @@ footer .honey-atmo::before{animation-delay:-9s}
 </div></div></section>
 
 <dialog id="lb" aria-label="Foto ampliada"><img alt=""><p class="lbnote">Imagem meramente ilustrativa</p><button type="button" id="lbx" aria-label="Fechar">×</button></dialog>
+
+<section class="try-section" id="experimente" aria-labelledby="try-heading"><div class="honey-atmo" data-atmosphere="model" aria-hidden="true"></div><div class="wrap try-layout">
+<div class="try-copy reveal">
+<span class="pill">Experiência interativa</span>
+<h2 id="try-heading">Explore nosso pão de mel</h2>
+<p>Arraste o modelo para girar e use a roda do mouse para aproximar. No celular, mova com o dedo; use as setas do teclado quando o modelo estiver selecionado.</p>
+<button class="btn ghost model-reset" id="model-reset" type="button">Voltar à posição inicial</button>
+</div>
+<div class="model-card reveal">
+<canvas id="pao-viewer" tabindex="0" aria-label="Modelo 3D de pão de mel. Arraste para girar ou use as setas do teclado."></canvas>
+<p class="model-status" id="model-status" role="status" aria-live="polite">Preparando o modelo 3D…</p>
+</div>
+</div></section>
 
 <section id="como"><div class="honey-atmo" data-atmosphere="process" aria-hidden="true"></div><div class="wrap">
 <h2 class="reveal">Como encomendar</h2>
@@ -530,6 +558,7 @@ scheduleNextDrip();
 // ambient particles are created once; CSS handles their independent motion
 const atmosphereConfig={
   hero:{particles:4,bubbles:0,parallax:7},
+  model:{particles:4,bubbles:0,parallax:6},
   about:{particles:6,bubbles:1,parallax:13,hex:{count:7,left:68,top:12,width:28,height:53}},
   flavors:{particles:5,bubbles:2,parallax:9,hex:{count:5,left:3,top:48,width:23,height:38}},
   gallery:{particles:3,bubbles:0,parallax:5},
@@ -681,6 +710,341 @@ backgroundAudio.play().catch(error=>{
   }
 });
 </script>
+
+<script type="module">
+const canvas = document.getElementById("pao-viewer");
+const status = document.getElementById("model-status");
+const resetButton = document.getElementById("model-reset");
+
+if (canvas && status && resetButton) {
+  let started = false;
+  let renderer, scene, camera, model;
+  let resizeObserver;
+
+  const startViewer = async () => {
+    if (started) return;
+    started = true;
+
+    status.hidden = false;
+    status.textContent = "Carregando o pão de mel 3D…";
+
+    try {
+      const THREE = await import("three");
+      const { FBXLoader } = await import(
+        "three/addons/loaders/FBXLoader.js"
+      );
+
+      // RENDERIZADOR
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: true,
+        antialias: true
+      });
+
+      renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio || 1, 2)
+      );
+
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.35;
+
+      // CENA
+      scene = new THREE.Scene();
+
+      // CÂMERA
+      camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
+      camera.position.set(0, 0, 4.4);
+
+      // ILUMINAÇÃO AMBIENTE
+      const ambientLight = new THREE.AmbientLight(
+        0xffffff,
+        1.8
+      );
+      scene.add(ambientLight);
+
+      // LUZ PRINCIPAL
+      const keyLight = new THREE.DirectionalLight(
+        0xffead8,
+        3.0
+      );
+      keyLight.position.set(-3, 5, 5);
+      scene.add(keyLight);
+
+      // LUZ DE PREENCHIMENTO
+      const fillLight = new THREE.DirectionalLight(
+        0xffffff,
+        2.0
+      );
+      fillLight.position.set(4, 2, 4);
+      scene.add(fillLight);
+
+      // LUZ SUPERIOR
+      const topLight = new THREE.DirectionalLight(
+        0xfff1df,
+        1.5
+      );
+      topLight.position.set(0, 5, -2);
+      scene.add(topLight);
+
+      // LUZ DE CONTORNO
+      const rimLight = new THREE.DirectionalLight(
+        0xffd7a8,
+        0.8
+      );
+      rimLight.position.set(-4, 1, -2);
+      scene.add(rimLight);
+
+      // GRUPO DO MODELO
+      const pivot = new THREE.Group();
+      scene.add(pivot);
+
+      // TEXTURA
+      const textureLoader = new THREE.TextureLoader();
+
+      const breadTexture = textureLoader.load(
+        "./assets/pao-de-mel/Meshy_AI_Chocolate_Lattice_Cake_20261120_texture.png",
+        () => {
+          if (model) renderer.render(scene, camera);
+        },
+        undefined,
+        error => {
+          console.error(
+            "Erro ao carregar textura:",
+            error
+          );
+        }
+      );
+
+      breadTexture.colorSpace = THREE.SRGBColorSpace;
+      breadTexture.anisotropy =
+        renderer.capabilities.getMaxAnisotropy();
+
+      // REDIMENSIONAMENTO
+      const resize = () => {
+        const bounds = canvas.getBoundingClientRect();
+
+        const width = Math.max(1, bounds.width);
+        const height = Math.max(1, bounds.height);
+
+        renderer.setSize(width, height, false);
+
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+
+        if (model) {
+          renderer.render(scene, camera);
+        }
+      };
+
+      resizeObserver = new ResizeObserver(resize);
+      resizeObserver.observe(canvas);
+      resize();
+
+      // CARREGAMENTO DO MODELO FBX
+      const loader = new FBXLoader();
+
+      loader.load(
+        "./assets/pao-de-mel/Meshy_AI_Chocolate_Lattice_Cake_20261120_texture.fbx",
+
+        object => {
+          // CENTRALIZAR MODELO
+          const bounds = new THREE.Box3().setFromObject(object);
+
+          const size = bounds.getSize(
+            new THREE.Vector3()
+          );
+
+          const center = bounds.getCenter(
+            new THREE.Vector3()
+          );
+
+          object.position.sub(center);
+
+          // MATERIAL DO CHOCOLATE
+          object.traverse(child => {
+            if (!child.isMesh) return;
+
+            child.material = new THREE.MeshStandardMaterial({
+              map: breadTexture,
+              color: 0xffffff,
+              roughness: 0.38,
+              metalness: 0.0
+            });
+
+            child.material.needsUpdate = true;
+          });
+
+          // ADICIONAR AO GRUPO
+          pivot.add(object);
+
+          // ESCALA
+          pivot.scale.setScalar(
+            2.45 / Math.max(size.x, size.y, size.z)
+          );
+
+          // POSIÇÃO INICIAL
+          pivot.rotation.set(-0.12, -0.55, 0);
+
+          model = pivot;
+
+          status.hidden = true;
+          resize();
+        },
+
+        progress => {
+          if (progress.total) {
+            const percentage = Math.round(
+              (progress.loaded / progress.total) * 100
+            );
+
+            status.textContent =
+              "Carregando o pão de mel 3D… " +
+              percentage +
+              "%";
+          }
+        },
+
+        error => {
+          console.error(
+            "Erro ao carregar modelo 3D:",
+            error
+          );
+
+          status.textContent =
+            "Não foi possível carregar o modelo 3D. Verifique a conexão e atualize a página.";
+        }
+      );
+
+      // ROTAÇÃO COM MOUSE
+      canvas.addEventListener("pointerdown", event => {
+        if (event.button !== 0) return;
+
+        canvas.setPointerCapture(event.pointerId);
+
+        canvas.dataset.dragX = String(event.clientX);
+        canvas.dataset.dragY = String(event.clientY);
+      });
+
+      canvas.addEventListener("pointermove", event => {
+        if (
+          !model ||
+          !canvas.hasPointerCapture(event.pointerId)
+        ) return;
+
+        const previousX = Number(canvas.dataset.dragX);
+        const previousY = Number(canvas.dataset.dragY);
+
+        model.rotation.y +=
+          (event.clientX - previousX) * 0.009;
+
+        model.rotation.x = Math.max(
+          -1.15,
+          Math.min(
+            1.15,
+            model.rotation.x +
+              (event.clientY - previousY) * 0.009
+          )
+        );
+
+        canvas.dataset.dragX = String(event.clientX);
+        canvas.dataset.dragY = String(event.clientY);
+
+        renderer.render(scene, camera);
+      });
+
+      // ZOOM COM SCROLL
+      canvas.addEventListener(
+        "wheel",
+        event => {
+          if (!camera) return;
+
+          event.preventDefault();
+
+          camera.position.z = Math.max(
+            2.5,
+            Math.min(
+              8,
+              camera.position.z *
+                Math.exp(event.deltaY * 0.001)
+            )
+          );
+
+          renderer.render(scene, camera);
+        },
+        { passive: false }
+      );
+
+      // CONTROLES PELO TECLADO
+      canvas.addEventListener("keydown", event => {
+        if (!model) return;
+
+        const step = 0.12;
+
+        if (event.key === "ArrowLeft") {
+          model.rotation.y -= step;
+        } else if (event.key === "ArrowRight") {
+          model.rotation.y += step;
+        } else if (event.key === "ArrowUp") {
+          model.rotation.x = Math.max(
+            -1.15,
+            model.rotation.x - step
+          );
+        } else if (event.key === "ArrowDown") {
+          model.rotation.x = Math.min(
+            1.15,
+            model.rotation.x + step
+          );
+        } else {
+          return;
+        }
+
+        event.preventDefault();
+        renderer.render(scene, camera);
+      });
+
+      // RESET
+      resetButton.addEventListener("click", () => {
+        if (!model) return;
+
+        model.rotation.set(-0.12, -0.55, 0);
+        camera.position.set(0, 0, 4.4);
+
+        renderer.render(scene, camera);
+      });
+
+    } catch (error) {
+      console.error(
+        "Erro ao iniciar visualizador:",
+        error
+      );
+
+      status.textContent =
+        "O visualizador 3D não pôde ser iniciado. Verifique a conexão e atualize a página.";
+    }
+  };
+
+  // CARREGAMENTO SOB DEMANDA
+  if ("IntersectionObserver" in window) {
+    const viewerObserver = new IntersectionObserver(
+      entries => {
+        if (
+          entries.some(entry => entry.isIntersecting)
+        ) {
+          viewerObserver.disconnect();
+          startViewer();
+        }
+      },
+      { rootMargin: "160px" }
+    );
+
+    viewerObserver.observe(canvas);
+  } else {
+    startViewer();
+  }
+}
+</script>
+
 </body>
 </html>
 <!--teste.teste.teste.teste.teste.teste.teste.-->
